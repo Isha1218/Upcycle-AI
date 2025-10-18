@@ -52,8 +52,8 @@ class UpcyclingLLMService:
         
         # Configure Gemini
         genai.configure(api_key=self.gemini_api_key)
-        self.image_model = genai.GenerativeModel('gemini-2.0-flash')
-        self.text_model = genai.GenerativeModel('gemini-2.0-flash')
+        self.image_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.text_model = genai.GenerativeModel('gemini-2.0-flash-exp')
     
     def analyze_image(self, image_path: str) -> ImageAnalysis:
         """
