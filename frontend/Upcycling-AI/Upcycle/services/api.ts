@@ -39,6 +39,12 @@ export interface UpcyclingResult {
   status: string;
 }
 
+export interface UpcycledImageResult {
+  status: string;
+  upcycled_image: string;
+  idea_title: string;
+}
+
 class UpcyclingAPI {
   private baseURL: string;
 
@@ -80,6 +86,46 @@ class UpcyclingAPI {
         }
       }
       throw new Error('Failed to analyze image');
+    }
+  }
+
+  async generateUpcycledImage(imageUri: string, upcyclingIdea: UpcyclingIdea): Promise<UpcycledImageResult> {
+    try {
+      // Create FormData for file upload
+      const formData = new FormData();
+      
+      // Add the image file to FormData
+      formData.append('file', {
+        uri: imageUri,
+        type: 'image/jpeg',
+        name: 'image.jpg',
+      } as any);
+
+      // Add the upcycling idea data as JSON string
+      formData.append('idea_data', JSON.stringify(upcyclingIdea));
+
+      const response = await axios.post(
+        `${this.baseURL}/generate-upcycled-image`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          timeout: 60000, // 60 second timeout for image generation
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('Image Generation Error:', error);
+      if (axios.isAxiosError(error)) {
+        if (error.response) {
+          throw new Error(`Server error: ${error.response.status} - ${error.response.data?.detail || 'Unknown error'}`);
+        } else if (error.request) {
+          throw new Error('Network error: Could not connect to server. Make sure the backend is running.');
+        }
+      }
+      throw new Error('Failed to generate upcycled image');
     }
   }
 

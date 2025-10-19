@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,15 +6,25 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
+  ActivityIndicator,
+  Alert,
+  Modal,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { UpcyclingResult } from '../services/api';
+import { UpcyclingResult, UpcyclingIdea } from '../services/api';
+import upcyclingAPI from '../services/api';
+import MotionAR from '../components/MotionAR';
 
 export default function ResultsScreen() {
   const { result: resultString, imageUri } = useLocalSearchParams<{
     result: string;
     imageUri: string;
   }>();
+
+  const [generatingImages, setGeneratingImages] = useState<{ [key: number]: boolean }>({});
+  const [generatedImages, setGeneratedImages] = useState<{ [key: number]: string }>({});
+  const [showAR, setShowAR] = useState(false);
+  const [arImageUri, setArImageUri] = useState<string>('');
 
   if (!resultString || !imageUri) {
     return (
@@ -29,6 +39,44 @@ export default function ResultsScreen() {
 
   const result: UpcyclingResult = JSON.parse(resultString);
   const { analysis, upcycling_ideas } = result;
+
+  const generateUpcycledImage = async (idea: UpcyclingIdea, ideaIndex: number) => {
+    setGeneratingImages(prev => ({ ...prev, [ideaIndex]: true }));
+    
+    try {
+      console.log(`🎨 Generating upcycled image for: ${idea.title}`);
+      const imageResult = await upcyclingAPI.generateUpcycledImage(imageUri, idea);
+      
+      if (imageResult.status === 'success' && imageResult.upcycled_image) {
+        setGeneratedImages(prev => ({ 
+          ...prev, 
+          [ideaIndex]: `data:image/jpeg;base64,${imageResult.upcycled_image}` 
+        }));
+        console.log(`✅ Successfully generated upcycled image for: ${idea.title}`);
+      } else {
+        throw new Error('Failed to generate image');
+      }
+    } catch (error) {
+      console.error(`❌ Error generating image for ${idea.title}:`, error);
+      Alert.alert(
+        'Image Generation Failed',
+        error instanceof Error ? error.message : 'Unknown error occurred',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setGeneratingImages(prev => ({ ...prev, [ideaIndex]: false }));
+    }
+  };
+
+  const openARView = (imageUri: string) => {
+    setArImageUri(imageUri);
+    setShowAR(true);
+  };
+
+  const closeARView = () => {
+    setShowAR(false);
+    setArImageUri('');
+  };
 
   return (
     <ScrollView style={styles.container}>
@@ -140,9 +188,63 @@ export default function ResultsScreen() {
                 </Text>
               ))}
             </View>
+
+            {/* Image Generation Section */}
+            <View style={styles.ideaSection}>
+              <Text style={styles.ideaSectionTitle}>🎨 See the Result:</Text>
+              
+                  {generatedImages[index] ? (
+                    <View style={styles.generatedImageContainer}>
+                      <Image 
+                        source={{ uri: generatedImages[index] }} 
+                        style={styles.generatedImage}
+                        resizeMode="cover"
+                      />
+                      <Text style={styles.generatedImageLabel}>
+                        Generated upcycled result for "{idea.title}"
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.arButton}
+                        onPress={() => openARView(generatedImages[index])}
+                      >
+                        <Text style={styles.arButtonText}>🥽 View in AR</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.generateButton,
+                    generatingImages[index] && styles.generateButtonDisabled
+                  ]}
+                  onPress={() => generateUpcycledImage(idea, index)}
+                  disabled={generatingImages[index]}
+                >
+                  {generatingImages[index] ? (
+                    <View style={styles.generateButtonContent}>
+                      <ActivityIndicator size="small" color="#fff" />
+                      <Text style={styles.generateButtonText}>Generating...</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.generateButtonText}>🎨 Generate Upcycled Image</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         ))}
       </View>
+
+      {/* AR Modal */}
+      <Modal
+        visible={showAR}
+        animationType="slide"
+        presentationStyle="fullScreen"
+      >
+        <MotionAR
+          upcycledImageUri={arImageUri}
+          onClose={closeARView}
+        />
+      </Modal>
     </ScrollView>
   );
 }
@@ -336,5 +438,55 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666',
     marginBottom: 20,
+  },
+  generateButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  generateButtonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  generateButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  generateButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  generatedImageContainer: {
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  generatedImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  generatedImageLabel: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  arButton: {
+    backgroundColor: '#FF6B35',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  arButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

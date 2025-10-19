@@ -1,8 +1,9 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import tempfile
-from llm_service import UpcyclingLLMService
+import json
+from llm_service import UpcyclingLLMService, UpcyclingIdea
 import uvicorn
 from dotenv import load_dotenv
 
@@ -102,6 +103,75 @@ async def analyze_image(file: UploadFile = File(...)):
                 pass
         
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+
+
+@app.post("/generate-upcycled-image")
+async def generate_upcycled_image(file: UploadFile = File(...), idea_data: str = Form(...)):
+    """
+    Generate an image showing the upcycled result using Gemini 2.5 Flash Image
+    
+    Args:
+        file: Original image file
+        idea_data: JSON string containing the upcycling idea
+        
+    Returns:
+        Base64 encoded image of the upcycled result
+    """
+    print(f"🎨 Received upcycled image generation request: {file.filename}")
+    
+    if not llm_service:
+        raise HTTPException(status_code=500, detail="LLM service not available")
+    
+    if not idea_data:
+        raise HTTPException(status_code=400, detail="Upcycling idea data is required")
+    
+    temp_file_path = None
+    
+    try:
+        # Parse the upcycling idea
+        idea_dict = json.loads(idea_data)
+        upcycling_idea = UpcyclingIdea(**idea_dict)
+        
+        print(f"📋 Processing idea: {upcycling_idea.title}")
+        
+        # Save uploaded file temporarily
+        content = await file.read()
+        print(f"📊 File size: {len(content)} bytes")
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as temp_file:
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+            print(f"✅ File saved to: {temp_file_path}")
+        
+        # Generate the upcycled image
+        print("🎨 Generating upcycled image with Gemini 2.5 Flash Image...")
+        upcycled_image_base64 = llm_service.generate_upcycled_image(temp_file_path, upcycling_idea)
+        
+        if upcycled_image_base64:
+            print("✅ Upcycled image generated successfully!")
+            return {
+                "status": "success",
+                "upcycled_image": upcycled_image_base64,
+                "idea_title": upcycling_idea.title
+            }
+        else:
+            print("❌ Failed to generate upcycled image")
+            raise HTTPException(status_code=500, detail="Failed to generate upcycled image")
+            
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON parsing error: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON format for upcycling idea")
+    except Exception as e:
+        print(f"❌ Error generating upcycled image: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generating upcycled image: {str(e)}")
+    finally:
+        # Clean up temporary file
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+                print("🧹 Cleaned up temporary file")
+            except:
+                pass
 
 
 @app.get("/health")
