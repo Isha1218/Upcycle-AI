@@ -25,13 +25,14 @@ export default function ResultsScreen() {
   const [generatedImages, setGeneratedImages] = useState<{ [key: number]: string }>({});
   const [showAR, setShowAR] = useState(false);
   const [arImageUri, setArImageUri] = useState<string>('');
+  const [expandedIdeas, setExpandedIdeas] = useState<{ [key: number]: boolean }>({});
 
   if (!resultString || !imageUri) {
     return (
       <View style={styles.errorContainer}>
         <Text style={styles.errorText}>No data available</Text>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>← Back</Text>
+        <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -68,6 +69,37 @@ export default function ResultsScreen() {
     }
   };
 
+  const handleShowInAR = async (idea: UpcyclingIdea, ideaIndex: number) => {
+    // If already generated, open AR directly
+    const existing = generatedImages[ideaIndex];
+    if (existing) {
+      openARView(existing);
+      return;
+    }
+
+    // Otherwise, generate then open AR
+    setGeneratingImages(prev => ({ ...prev, [ideaIndex]: true }));
+    try {
+      const imageResult = await upcyclingAPI.generateUpcycledImage(imageUri, idea);
+      if (imageResult.status === 'success' && imageResult.upcycled_image) {
+        const composedUri = `data:image/jpeg;base64,${imageResult.upcycled_image}`;
+        setGeneratedImages(prev => ({ ...prev, [ideaIndex]: composedUri }));
+        openARView(composedUri);
+      } else {
+        throw new Error('Failed to generate image');
+      }
+    } catch (error) {
+      console.error(`❌ Error preparing AR for ${idea.title}:`, error);
+      Alert.alert(
+        'Show in AR Failed',
+        error instanceof Error ? error.message : 'Unknown error occurred',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setGeneratingImages(prev => ({ ...prev, [ideaIndex]: false }));
+    }
+  };
+
   const openARView = (imageUri: string) => {
     setArImageUri(imageUri);
     setShowAR(true);
@@ -95,29 +127,25 @@ export default function ResultsScreen() {
         <Image source={{ uri: imageUri }} style={styles.image} />
       </View>
 
-      {/* Analysis Section */}
+      {/* Analysis Section (simplified) */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>📊 Object Analysis</Text>
+        <Text style={styles.sectionTitle}>Object Analysis</Text>
         <View style={styles.analysisCard}>
           <Text style={styles.objectName}>{analysis.main_object}</Text>
-          <View style={styles.analysisRow}>
-            <Text style={styles.analysisLabel}>Condition:</Text>
-            <Text style={styles.analysisValue}>{analysis.overall_condition}</Text>
-          </View>
-          <View style={styles.analysisRow}>
-            <Text style={styles.analysisLabel}>Difficulty:</Text>
-            <Text style={styles.analysisValue}>{analysis.difficulty_level}</Text>
-          </View>
-          <View style={styles.analysisRow}>
-            <Text style={styles.analysisLabel}>Parts Found:</Text>
-            <Text style={styles.analysisValue}>{analysis.parts.length}</Text>
+          <View style={styles.chipRow}>
+            <View style={[styles.chip, styles.chipPrimary]}>
+              <Text style={styles.chipText}>Condition: {analysis.overall_condition}</Text>
+            </View>
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>Parts: {analysis.parts.length}</Text>
+            </View>
           </View>
         </View>
       </View>
 
       {/* Parts Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🔧 Reusable Parts</Text>
+        <Text style={styles.sectionTitle}>Reusable Parts</Text>
         {analysis.parts.map((part, index) => (
           <View key={index} style={styles.partCard}>
             <Text style={styles.partName}>{part.name}</Text>
@@ -131,7 +159,7 @@ export default function ResultsScreen() {
             </View>
             {part.notes && (
               <Text style={styles.disassemblyNotes}>
-                💡 {part.notes}
+                {part.notes}
               </Text>
             )}
           </View>
@@ -140,95 +168,96 @@ export default function ResultsScreen() {
 
       {/* Upcycling Ideas Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>💡 Upcycling Ideas</Text>
+        <Text style={styles.sectionTitle}>Upcycling Ideas</Text>
         {upcycling_ideas.ideas.map((idea, index) => (
           <View key={index} style={styles.ideaCard}>
             <Text style={styles.ideaTitle}>{idea.title}</Text>
             <Text style={styles.ideaDescription}>{idea.description}</Text>
             
-            <View style={styles.ideaMeta}>
-              <View style={styles.metaItem}>
-                <Text style={styles.metaLabel}>Difficulty:</Text>
-                <Text style={[styles.metaValue, getDifficultyColor(idea.difficulty)]}>
-                  {idea.difficulty}
-                </Text>
+            <View style={styles.chipRow}>
+              <View style={[styles.chip, styles.chipPrimary]}>
+                <Text style={styles.chipText}>Difficulty: {idea.difficulty}</Text>
               </View>
-              <View style={styles.metaItem}>
-                <Text style={styles.metaLabel}>Time:</Text>
-                <Text style={styles.metaValue}>{idea.time_estimate}</Text>
+              <View style={styles.chip}>
+                <Text style={styles.chipText}>Time: {idea.time_estimate}</Text>
               </View>
             </View>
 
-            <View style={styles.ideaSection}>
-              <Text style={styles.ideaSectionTitle}>🛠️ Tools Needed:</Text>
-              <Text style={styles.ideaSectionContent}>
-                {idea.required_tools.join(', ')}
+            <TouchableOpacity
+              style={styles.collapseHeader}
+              onPress={() => setExpandedIdeas(prev => ({ ...prev, [index]: !prev[index] }))}
+            >
+              <Text style={styles.collapseHeaderText}>
+                {expandedIdeas[index] ? 'Hide details ▲' : 'Show details ▼'}
               </Text>
-            </View>
+            </TouchableOpacity>
 
-            <View style={styles.ideaSection}>
-              <Text style={styles.ideaSectionTitle}>📦 Materials:</Text>
-              <Text style={styles.ideaSectionContent}>
-                {idea.additional_materials.join(', ')}
-              </Text>
-            </View>
+            {expandedIdeas[index] && (
+              <View>
+                <View style={styles.ideaSection}>
+                <Text style={styles.ideaSectionTitle}>Tools Needed</Text>
+                  <Text style={styles.ideaSectionContent}>
+                    {idea.required_tools.join(', ')}
+                  </Text>
+                </View>
 
-            <View style={styles.ideaSection}>
-              <Text style={styles.ideaSectionTitle}>🔧 Parts Used:</Text>
-              <Text style={styles.ideaSectionContent}>
-                {idea.parts_used.join(', ')}
-              </Text>
-            </View>
+                <View style={styles.ideaSection}>
+                <Text style={styles.ideaSectionTitle}>Materials</Text>
+                  <Text style={styles.ideaSectionContent}>
+                    {idea.additional_materials.join(', ')}
+                  </Text>
+                </View>
 
-            <View style={styles.ideaSection}>
-              <Text style={styles.ideaSectionTitle}>📋 Steps:</Text>
-              {idea.steps.map((step, stepIndex) => (
-                <Text key={stepIndex} style={styles.stepText}>
-                  {stepIndex + 1}. {step}
-                </Text>
-              ))}
-            </View>
+                <View style={styles.ideaSection}>
+                <Text style={styles.ideaSectionTitle}>Parts Used</Text>
+                  <Text style={styles.ideaSectionContent}>
+                    {idea.parts_used.join(', ')}
+                  </Text>
+                </View>
+
+                <View style={styles.ideaSection}>
+                <Text style={styles.ideaSectionTitle}>Steps</Text>
+                  {idea.steps.map((step, stepIndex) => (
+                    <Text key={stepIndex} style={styles.stepText}>
+                      {stepIndex + 1}. {step}
+                    </Text>
+                  ))}
+                </View>
+              </View>
+            )}
 
             {/* Image Generation Section */}
             <View style={styles.ideaSection}>
-              <Text style={styles.ideaSectionTitle}>🎨 See the Result:</Text>
-              
-                  {generatedImages[index] ? (
-                    <View style={styles.generatedImageContainer}>
-                      <Image 
-                        source={{ uri: generatedImages[index] }} 
-                        style={styles.generatedImage}
-                        resizeMode="cover"
-                      />
-                      <Text style={styles.generatedImageLabel}>
-                        Generated upcycled result for "{idea.title}"
-                      </Text>
-                      <TouchableOpacity
-                        style={styles.arButton}
-                        onPress={() => openARView(generatedImages[index])}
-                      >
-                        <Text style={styles.arButtonText}>🥽 View in AR</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                <TouchableOpacity
-                  style={[
-                    styles.generateButton,
-                    generatingImages[index] && styles.generateButtonDisabled
-                  ]}
-                  onPress={() => generateUpcycledImage(idea, index)}
-                  disabled={generatingImages[index]}
-                >
-                  {generatingImages[index] ? (
-                    <View style={styles.generateButtonContent}>
-                      <ActivityIndicator size="small" color="#fff" />
-                      <Text style={styles.generateButtonText}>Generating...</Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.generateButtonText}>🎨 Generate Upcycled Image</Text>
-                  )}
-                </TouchableOpacity>
+              <Text style={styles.ideaSectionTitle}>Preview</Text>
+              {generatedImages[index] && (
+                <View style={styles.generatedImageContainer}>
+                  <Image 
+                    source={{ uri: generatedImages[index] }} 
+                    style={styles.generatedImage}
+                    resizeMode="cover"
+                  />
+                  <Text style={styles.generatedImageLabel}>
+                    Generated upcycled result for "{idea.title}"
+                  </Text>
+                </View>
               )}
+              <TouchableOpacity
+                style={[
+                  styles.ctaButton,
+                  generatingImages[index] && styles.ctaButtonDisabled
+                ]}
+                onPress={() => handleShowInAR(idea, index)}
+                disabled={generatingImages[index]}
+              >
+                {generatingImages[index] ? (
+                  <View style={styles.generateButtonContent}>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.ctaButtonText}>Preparing AR...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.ctaButtonText}>Show in AR</Text>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
         ))}
@@ -271,6 +300,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 20,
+    paddingTop: 56,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
@@ -280,7 +310,7 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: 16,
-    color: '#007AFF',
+    color: '#166534',
   },
   title: {
     fontSize: 20,
@@ -315,6 +345,29 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    backgroundColor: 'transparent',
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginRight: 8,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#166534',
+  },
+  chipPrimary: {
+    backgroundColor: 'transparent',
+  },
+  chipText: {
+    fontSize: 12,
+    color: '#166534',
+    fontWeight: '600',
   },
   objectName: {
     fontSize: 20,
@@ -363,7 +416,7 @@ const styles = StyleSheet.create({
   },
   disassemblyNotes: {
     fontSize: 14,
-    color: '#007AFF',
+    color: '#166534',
     fontStyle: 'italic',
   },
   ideaCard: {
@@ -410,6 +463,13 @@ const styles = StyleSheet.create({
   ideaSection: {
     marginBottom: 15,
   },
+  collapseHeader: {
+    paddingVertical: 8,
+  },
+  collapseHeaderText: {
+    color: '#166534',
+    fontWeight: '600',
+  },
   ideaSectionTitle: {
     fontSize: 16,
     fontWeight: '600',
@@ -440,12 +500,24 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   generateButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#166534',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 10,
+  },
+  ctaButton: {
+    backgroundColor: '#166534',
+    paddingVertical: 14,
+    paddingHorizontal: 22,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  ctaButtonDisabled: {
+    backgroundColor: '#166534',
+    opacity: 0.6,
   },
   generateButtonDisabled: {
     backgroundColor: '#ccc',
@@ -459,6 +531,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  ctaButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   generatedImageContainer: {
     alignItems: 'center',
